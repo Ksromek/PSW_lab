@@ -1,33 +1,35 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-#Zadanie_1:
-
+#Zadanie_1
 fig, axs = plt.subplots(3, 3, figsize=(10, 10))
 
 x=np.linspace(0,4*np.pi,40)
 
 y=np.sin(x)
 
-axs[0,0].plot(x,y)
+fig.tight_layout()
+
+axs[0,0].plot(x,y,color='red')
 axs[0, 0].set_title("Funkcja sinus")
 
-y=y[:,np.newaxis]*y[np.newaxis,:]
+y=y[:, np.newaxis]*y[np.newaxis, :]
 
 axs[0, 1].imshow(y, cmap='magma')
+
 axs[0, 1].set_title(f"min: {np.min(y):.3f}, max: {np.max(y):.3f}")
 
-y_norm = y-np.min(y)
-y_norm = y_norm/np.max(y_norm)
+y_norm=y-np.min(y)
+
+y_norm=y_norm/np.max(y_norm)
 
 axs[0, 2].imshow(y_norm, cmap='magma')
 
 axs[0, 2].set_title(f"min: {np.min(y_norm):.3f}, max: {np.max(y_norm):.3f}")
 
-plt.tight_layout()
-fig.savefig("Zadanie_1.png")
+fig.savefig("Zad_1.png")
 
-#Zadanie_2:
+#Zadanie_2
 
 y_discr_2=y_norm*(2 ** 2 -1)
 y_discr_2 = np.rint(y_discr_2)
@@ -44,30 +46,32 @@ axs[1, 1].set_title(f"min: {np.min(y_discr_4):.0f}, max: {np.max(y_discr_4):.0f}
 y_discr_8=y_norm*(2 ** 8 -1)
 y_discr_8 = np.rint(y_discr_8)
 
-axs[1, 2].imshow(y_discr_8, cmap='magma')
+axs[1, 2].imshow(y_discr_4, cmap='magma')
 axs[1, 2].set_title(f"min: {np.min(y_discr_8):.0f}, max: {np.max(y_discr_8):.0f}")
 
-fig.savefig("Zadanie_2.png")
+fig.savefig("Zad_2.png")
 
-#Zadanie_3:
+#Zadanie_3
 
-noise=np.random.normal( 0, 1,size=(40,40))
-y_discr_noise=y_norm+noise
+gaussian_noise=np.random.normal(size=(40, 40))
 
-axs[2, 0].imshow(y_discr_noise, cmap='magma')
+y_gaussian_noise=y_norm+gaussian_noise
+
+axs[2, 0].imshow(y_gaussian_noise, cmap='magma')
 axs[2, 0].set_title("n=1")
 
-noisy_50 = y_norm + np.random.normal(size=(50, 40, 40))
-denoised_50 = np.mean(noisy_50, axis=0)
+y_noise_50=y_norm+np.random.normal(size=(50,40,40))
+y_denoised_50=np.mean(y_noise_50, axis=0)
 
-axs[2, 1].imshow(denoised_50, cmap='magma')
+axs[2, 1].imshow(y_denoised_50, cmap='magma')
 axs[2, 1].set_title("n=50")
 
-noisy_1000 = y_norm + np.random.normal(size=(1000, 40, 40))
-denoised_1000 = np.mean(noisy_1000, axis=0)
+y_noise_1000=y_norm+np.random.normal(size=(1000,40,40))
+y_denoised_1000=np.mean(y_noise_1000, axis=0)
 
-axs[2, 2].imshow(denoised_1000, cmap='magma')
+axs[2, 2].imshow(y_denoised_1000, cmap='magma')
 axs[2, 2].set_title("n=1000")
 
-fig.savefig("Zadanie_3.png")
+fig.savefig("Zad_3.png")
+
 plt.show()
