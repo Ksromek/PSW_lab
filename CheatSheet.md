@@ -325,3 +325,60 @@ from scipy.stats import entropy
 
 h = entropy(prob)        # takes probabilities, not the image! higher = more information
 ```
+---
+
+## 10. Spatial filtering (correlation, convolution)
+
+```python
+from scipy import ndimage
+
+sobel_s1 = np.array([[-1, 0, 1],
+                     [-2, 0, 2],
+                     [-1, 0, 1]])          # gradient operator (edges)
+
+out = ndimage.correlate(img, kernel)      # correlation
+out = ndimage.convolve(img, kernel)       # convolution = correlation with kernel rotated by 180°
+flipped = np.flip(kernel)                 # flip in both axes (vertical + horizontal)
+```
+
+Correlation for one pixel: place the kernel's centre on the pixel, multiply each kernel element by the pixel under it and sum.
+
+```
+out[i, j] = Σ Σ kernel[u + r, v + r] · img[i + u, j + v],   u, v = -r … r,   r = kernel.shape[0] // 2
+```
+
+For Sobel S1 `np.flip(S1) == -S1`, so `convolve` gives exactly `-correlate` (inverted relief).
+
+### Own implementation (any odd kernel size)
+```python
+def correlate_self(image, kernel):
+    r = kernel.shape[0] // 2                          # radius: 1 for 3×3, 3 for 7×7
+    out = np.zeros_like(image, dtype=float)           # borders = 0 (np.copy(image).astype(float) → borders = original)
+    for i in range(r, image.shape[0] - r):
+        for j in range(r, image.shape[1] - r):
+            pixel = 0
+            for u in range(-r, r + 1):
+                for v in range(-r, r + 1):
+                    pixel = pixel + kernel[u + r, v + r] * image[i + u, j + v]
+            out[i, j] = pixel
+    return out
+
+def convolve_self(image, kernel):
+    return correlate_self(image, np.flip(kernel))
+```
+
+scipy handles borders by reflecting the image (`mode='reflect'`), so results differ from the own function only on the border pixels.
+
+### Blur (mean filter)
+```python
+blur_kernel = np.ones((7, 7)) / 49     # constant coefficients, sum = 1 → brightness stays the same
+blurred = correlate_self(img, blur_kernel)
+```
+
+### Unsharp masking (sharpening)
+```python
+mask = img - blurred          # details (edges); values around 0, positive and negative
+sharpened = img + mask        # original + details
+
+ax.imshow(sharpened, cmap='gray', vmin=0, vmax=255)   # vmin/vmax for images, not for the mask
+```
