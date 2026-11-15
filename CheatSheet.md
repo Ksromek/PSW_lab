@@ -367,6 +367,18 @@ def convolve_self(image, kernel):
     return correlate_self(image, np.flip(kernel))
 ```
 
+### Own implementation – 2 loops + slicing (same result, faster)
+```python
+def correlate_self(image, kernel):
+    r = kernel.shape[0] // 2
+    out = np.zeros_like(image, dtype=float)
+    for i in range(r, image.shape[0] - r):
+        for j in range(r, image.shape[1] - r):
+            window = image[i - r:i + r + 1, j - r:j + r + 1]   # window of kernel size, centre at (i, j)
+            out[i, j] = np.sum(window * kernel)               # element-wise product + sum (not @!)
+    return out
+```
+
 scipy handles borders by reflecting the image (`mode='reflect'`), so results differ from the own function only on the border pixels.
 
 ### Blur (mean filter)
@@ -381,4 +393,147 @@ mask = img - blurred          # details (edges); values around 0, positive and n
 sharpened = img + mask        # original + details
 
 ax.imshow(sharpened, cmap='gray', vmin=0, vmax=255)   # vmin/vmax for images, not for the mask
+```
+---
+
+## 11. Noise reduction, median filter
+
+### Impulse (salt-and-pepper) noise
+```python
+def add_salt_pepper(image, amount):
+    noisy_image = np.copy(image)
+    mask = np.random.choice([0, 1, 2], size=image.shape, p=[1 - 2 * amount, amount, amount])
+    noisy_image[mask == 1] = 255   # salt (max intensity)
+    noisy_image[mask == 2] = 0     # pepper (min intensity)
+    return noisy_image
+```
+
+- `p` must sum to 1: first value = probability of **no change**, then salt, then pepper.
+- `size=image.shape` → for a colour image every channel gets its own noise (coloured dots); `size=image.shape[:2]` → the same pixel in all channels (black/white dots).
+
+### Picking channels and reducing
+```python
+red_small = img[::3, ::3, 0]    # red channel, 3× smaller → (H/3, W/3)
+small = img[::3, ::3]           # whole colour image 3× smaller → (H/3, W/3, 3); the 3rd axis = channels, don't step it
+```
+
+### Own filters – 2 loops + slicing (borders keep original values)
+```python
+def mean_self(image, size):
+    r = size // 2
+    filtered_image = np.copy(image).astype(float)
+    for i in range(r, image.shape[0] - r):
+        for j in range(r, image.shape[1] - r):
+            window = image[i - r:i + r + 1, j - r:j + r + 1]
+            filtered_image[i, j] = np.mean(window)
+    return filtered_image
+
+def median_self(image, size):
+    r = size // 2
+    filtered_image = np.copy(image)
+    for i in range(r, image.shape[0] - r):
+        for j in range(r, image.shape[1] - r):
+            window = image[i - r:i + r + 1, j - r:j + r + 1]
+            filtered_image[i, j] = np.median(window, axis=(0, 1))   # median separately for R, G, B
+    return filtered_image
+```
+
+- Mean filter only smears salt-and-pepper noise; median removes it and keeps edges.
+- Bigger window → removes more noise but blurs more.
+
+### Vector median (no colour bleeding)
+```python
+def vector_median_self(image, size):
+    r = size // 2
+    filtered_image = np.copy(image)
+    for i in range(r, image.shape[0] - r):
+        for j in range(r, image.shape[1] - r):
+            window = image[i - r:i + r + 1, j - r:j + r + 1]
+            colors = window.reshape(-1, 3)                  # (size*size, 3) list of [R, G, B] vectors
+
+            distances = cdist(colors, colors)               # distance of every colour to every colour
+            total_distance = np.sum(distances, axis=1)      # how far each colour is from the rest
+
+            best = np.argmin(total_distance)                # the most "typical" colour (centre of the cloud)
+            filtered_image[i, j] = colors[best]
+    return filtered_image
+```
+
+Per-channel median can create a colour that wasn't in the window (R from one pixel, G from another…) → colour bleeding. Vector median always returns one real pixel from the window.
+
+### scipy versions
+```python
+from scipy import ndimage
+
+ndimage.median_filter(img, size=(3, 3, 1))          # colour: (3, 3, 1) so channels don't mix
+ndimage.correlate(img, np.ones((3, 3, 1)) / 9)      # mean filter per channel
+```
+
+### Pitfalls
+- `uint8` arithmetic wraps around: `3 - 5 = 254`. Before subtracting images: `.astype(float)`.
+- `imshow` of a colour image needs `uint8` (0–255) or float in 0–1.
+- Combining boolean masks: `(a > 0) & (a < 255)` – with `&` and brackets, not `and`.
+
+---
+
+## 12. Fourier transform (FFT)
+
+```python
+camera = skimage.data.camera().astype(float)        # grayscale 512×512 ("cameraman")
+
+F = np.fft.fft2(camera)                 # 2D transform → complex array, same shape as the image
+F_shifted = np.fft.fftshift(F)          # move zero frequency (mean brightness) to the centre
+
+F_shifted.real                          # real part (float)
+F_shifted.imag                          # imaginary part (float)
+magnitude = np.abs(F_shifted)           # amplitude: how strong each frequency is
+phase = np.arctan2(F_shifted.imag, F_shifted.real)   # phase (same as np.angle(F_shifted))
+
+back = np.fft.ifft2(np.fft.ifftshift(F_shifted)).real   # inverse: undo shift → ifft2 → take .real
+```
+
+### Displaying the spectrum
+```python
+ax.imshow(np.log(np.abs(F_shifted) + 1), cmap='gray')   # log – values differ hugely; +1 – avoids log(0)
+```
+For `.real` / `.imag` also use `np.log(np.abs(...) + 1)`, because they have negative values.
+
+### What is where
+- **Centre** of the shifted spectrum = low frequencies (smooth areas, overall brightness).
+- **Far from centre** = high frequencies (edges, details, noise).
+- A stripe pattern in the image → two bright points in the spectrum, perpendicular to the stripes.
+- **Amplitude** = how strong a pattern is; **phase** = where it is (position and structure).
+
+### Filtering in the frequency domain
+```python
+H, W = camera.shape
+row_idx = np.arange(H)[:, np.newaxis]
+col_idx = np.arange(W)[np.newaxis, :]
+D = np.sqrt((row_idx - H // 2) ** 2 + (col_idx - W // 2) ** 2)   # distance from the spectrum centre
+
+D0 = 30
+ideal = (D <= D0).astype(float)                  # sharp cut → ringing
+gauss = np.exp(-D ** 2 / (2 * D0 ** 2))          # smooth, no ringing
+butter = 1 / (1 + (D / D0) ** (2 * n))           # in between (n – order)
+high_pass = 1 - gauss                            # high-pass = 1 − low-pass
+
+filtered = np.fft.ifft2(np.fft.ifftshift(F_shifted * mask)).real   # multiply spectrum by mask → back to image
+```
+
+Simple version with slicing (square instead of circle):
+```python
+c, r = H // 2, 30
+low = np.zeros_like(F_shifted)
+low[c - r:c + r, c - r:c + r] = F_shifted[c - r:c + r, c - r:c + r]   # keep only the centre → blur
+high = np.copy(F_shifted)
+high[c - r:c + r, c - r:c + r] = 0                                    # remove the centre → edges
+```
+
+### Notch filter (periodic noise)
+Periodic stripes = two bright points in the spectrum outside the centre. Set a small circle around each of them to 0 in a mask of ones, multiply the spectrum by the mask and go back.
+
+### Amplitude + phase → image
+```python
+F_new = np.abs(F_a) * np.exp(1j * np.angle(F_b))   # amplitude of image a, phase of image b
+img_new = np.fft.ifft2(F_new).real                 # looks like image b → phase carries the structure
 ```
